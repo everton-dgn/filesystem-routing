@@ -3,7 +3,7 @@ import { dirname, relative, resolve } from "node:path";
 import type { PluginOption } from "vite";
 
 import { PageFileSystemRouter, type PageFileSystemRouterConfig } from "../convention.ts";
-import type { ModuleRef, RouteManifestEntry } from "../manifest.ts";
+import { getRouteModuleRefs, type ModuleRef, type RouteManifestEntry } from "../manifest.ts";
 import { BaseFileSystemRouter, normalizePath } from "../router.ts";
 import { buildRouteTree, type RouteTreeEntry } from "../tree.ts";
 import { DEFAULT_EXTENSIONS, flagsId, moduleId, resolvedFlagsId } from "./constants.ts";
@@ -118,7 +118,7 @@ function stripHandlerRefs(routes: RouteManifestEntry[]): RouteManifestEntry[] {
     // path string reaches the client bundle.
     if (
       rest.page ||
-      Object.keys(rest).some(key => key.startsWith("$") && rest[key] !== undefined)
+      Object.keys(rest).some(key => key.startsWith("$") && rest[key] != null)
     ) {
       stripped.push(rest);
     }
@@ -262,9 +262,9 @@ export function fileRoutes(options: FileRoutesOptions = {}): PluginOption[] {
         // inlined into the manifest and need no entry.
         const input: string[] = [];
         for (const route of routes) {
-          for (const [key, ref] of Object.entries(route)) {
-            if (ref && key.startsWith("$") && !key.startsWith("$$") && !(ref as ModuleRef).eager) {
-              input.push(toModuleId(ref as ModuleRef));
+          for (const [key, ref] of getRouteModuleRefs(route)) {
+            if (!key.startsWith("$$") && !ref.eager) {
+              input.push(toModuleId(ref));
             }
           }
         }

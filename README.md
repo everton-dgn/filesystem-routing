@@ -283,6 +283,22 @@ The scanner produces flat `RouteManifestEntry` objects:
 }
 ```
 
+Use `getRouteModuleRefs` to read the direct module refs of a neutral entry:
+
+```ts
+import { getRouteModuleRefs } from "filesystem-routing";
+
+const sources = new Set(
+  routes.flatMap(route => getRouteModuleRefs(route).map(([, ref]) => ref.src))
+);
+```
+
+It returns typed `[key, ref]` pairs for non-null `$`-prefixed keys, including
+`$$` refs and custom handler refs. Keys, order and ref identity are preserved;
+refs pointing to the same source remain separate. It accepts the neutral
+entries from `getRoutes()`, before a delivery adapter turns refs into imports,
+and does not recurse into children or metadata.
+
 The Vite adapter serializes the manifest into the virtual module, turning
 `$`-prefixed refs into dynamic imports and `$$`-prefixed refs into static
 imports, each tree-shaken down to the picked exports. Splitting is not always

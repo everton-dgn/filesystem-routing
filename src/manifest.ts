@@ -64,3 +64,15 @@ export interface RouteManifestEntry {
    */
   [key: string]: unknown;
 }
+
+export type RouteModuleRefEntry = [key: string, ref: ModuleRef];
+
+export function getRouteModuleRefs(entry: RouteManifestEntry): RouteModuleRefEntry[] {
+  const refs: RouteModuleRefEntry[] = [];
+  for (const [key, value] of Object.entries(entry)) {
+    if (key.startsWith("$") && value != null) {
+      refs.push([key, value as ModuleRef]);
+    }
+  }
+  return refs;
+}

@@ -1,6 +1,6 @@
 import { relative } from "node:path";
 
-import type { ModuleRef, RouteManifestEntry } from "../manifest.ts";
+import { getRouteModuleRefs, type ModuleRef, type RouteManifestEntry } from "../manifest.ts";
 import { normalizePath } from "../router.ts";
 import type { RouteTreeEntry } from "../tree.ts";
 
@@ -93,18 +93,17 @@ function entryType(
 
   // A convention records refs it did not emit as present-but-undefined keys,
   // so go by the value, not the key.
-  const refKeys = Object.keys(entry).filter(key => key.startsWith("$") && entry[key] !== undefined);
-  for (const key of refKeys) {
+  const refs = getRouteModuleRefs(entry);
+  for (const [key, ref] of refs) {
     // With code splitting off, or a ref the convention marked `eager`, the
     // delivery adapter materializes lazy refs eagerly, so the declaration
     // describes them as delivered.
-    const ref = entry[key] as ModuleRef;
     const kind = isEagerRefKey(key) || !codeSplitting || ref.eager ? "eager" : "lazy";
     fields.push(`${key}: ${refType(ref, kind, from)}`);
   }
   // Reading an absent ref is how adapters branch, so keep the key present.
-  if (!refKeys.some(isLazyRefKey)) fields.push(`$component?: undefined`);
-  if (!refKeys.some(isEagerRefKey)) fields.push(`$$route?: undefined`);
+  if (!refs.some(([key]) => isLazyRefKey(key))) fields.push(`$component?: undefined`);
+  if (!refs.some(([key]) => isEagerRefKey(key))) fields.push(`$$route?: undefined`);
 
   if (nested) {
     const children = (entry as RouteTreeEntry).children;
