@@ -57,6 +57,12 @@ export class BaseFileSystemRouter extends EventTarget {
 
   config: FileSystemRouterConfig;
 
+  /**
+   * Route path each source file produced. A removed file can no longer be
+   * passed to `toRoute`, and `toPath` may give another file's route.
+   */
+  private routePaths = new Map<string, string>();
+
   constructor(config: FileSystemRouterConfig) {
     super();
     this.routes = [];
@@ -126,7 +132,9 @@ export class BaseFileSystemRouter extends EventTarget {
       try {
         const route = this.toRoute(src);
         if (route) {
+          if (this.routePaths.get(src) !== route.path) this.removeRoute(src);
           this._addRoute(route, src);
+          this.routePaths.set(src, route.path);
           this.reload(route.path, "add");
         }
       } catch (e) {
@@ -152,7 +160,9 @@ export class BaseFileSystemRouter extends EventTarget {
       try {
         const route = this.toRoute(src);
         if (route) {
+          if (this.routePaths.get(src) !== route.path) this.removeRoute(src_);
           const updated = this._addRoute(route, src);
+          this.routePaths.set(src, route.path);
           this.reload(route.path, updated ? "update" : "add");
         } else {
           this.removeRoute(src_);
@@ -165,19 +175,16 @@ export class BaseFileSystemRouter extends EventTarget {
 
   removeRoute(src: string) {
     src = normalizePath(src);
-    if (this.isRoute(src)) {
-      const path = this.toPath(src);
-      if (path === undefined) {
-        return;
-      }
+    const path = this.routePaths.get(src);
+    if (path === undefined) return;
+    this.routePaths.delete(src);
 
-      const idx = this.routes.findIndex(r => r.path === path);
-      if (idx === -1) return;
+    const idx = this.routes.findIndex(r => r.path === path);
+    if (idx === -1) return;
 
-      this.routes.splice(idx, 1);
-      this.sources.delete(path);
-      this.reload(path, "remove");
-    }
+    this.routes.splice(idx, 1);
+    this.sources.delete(path);
+    this.reload(path, "remove");
   }
 
   on(type: string, cb: (evt: RouterEvent) => void) {

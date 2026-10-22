@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PageFileSystemRouter, routePathFromFile } from "../src/index.ts";
+import { BaseFileSystemRouter, PageFileSystemRouter, routePathFromFile } from "../src/index.ts";
 
 describe("routePathFromFile", () => {
   it("maps index files to their directory path", () => {
@@ -51,6 +51,12 @@ function createRouteTree(files: Record<string, string>) {
     fs.writeFileSync(filename, source);
   }
   return directory;
+}
+
+// A module convention that takes the route path from a `// path:` comment.
+function routeFromComment(src: string) {
+  const match = /^\/\/ path: (\S+)/.exec(fs.readFileSync(src, "utf8"));
+  return match ? { path: match[1]!, page: true } : undefined;
 }
 
 afterEach(() => {
@@ -132,6 +138,64 @@ describe("PageFileSystemRouter", () => {
     router.removeRoute(contact);
     expect(router.routes.map(route => route.path)).toEqual(["/"]);
     expect(events).toEqual(["add:/contact", "remove:/contact"]);
+  });
+
+  it("keeps a page when a non-route file with the same path changes or is removed", async () => {
+    const dir = createRouteTree({
+      "about.tsx": "export default () => <h1>About</h1>;",
+      "about.ts": "export const data = {};"
+    });
+    const router = new PageFileSystemRouter({ dir, extensions: ["ts", "tsx"] });
+    await router.getRoutes();
+
+    const helper = path.join(dir, "about.ts");
+    await router.updateRoute(helper);
+    fs.rmSync(helper);
+    router.removeRoute(helper);
+
+    expect(router.routes.map(route => route.path)).toEqual(["/about"]);
+  });
+
+  it("removes the entry a custom toRoute produced", async () => {
+    const dir = createRouteTree({ "about.tsx": "// path: /a" });
+    const router = new PageFileSystemRouter({
+      dir,
+      extensions: ["tsx"],
+      toRoute: routeFromComment
+    });
+    await router.getRoutes();
+
+    const events: string[] = [];
+    router.on("reload", evt => events.push(`${evt.detail.type}:${evt.detail.route}`));
+
+    const about = path.join(dir, "about.tsx");
+    fs.writeFileSync(about, "// path: /b");
+    await router.updateRoute(about);
+    expect(router.routes.map(route => route.path)).toEqual(["/b"]);
+
+    fs.writeFileSync(about, "export default () => null;");
+    await router.updateRoute(about);
+    expect(router.routes).toEqual([]);
+
+    fs.writeFileSync(about, "// path: /c");
+    await router.addRoute(about);
+    fs.writeFileSync(about, "// path: /d");
+    await router.addRoute(about);
+    expect(router.routes.map(route => route.path)).toEqual(["/d"]);
+
+    fs.rmSync(about);
+    router.removeRoute(about);
+    expect(router.routes).toEqual([]);
+
+    expect(events).toEqual([
+      "remove:/a",
+      "add:/b",
+      "remove:/b",
+      "add:/c",
+      "remove:/c",
+      "add:/d",
+      "remove:/d"
+    ]);
   });
 
   it("omits component refs when components are off", async () => {
@@ -359,5 +423,23 @@ describe("PageFileSystemRouter", () => {
 
     const fresh = await new PageFileSystemRouter({ dir, extensions }).getRoutes();
     expect(router.routes.map(route => route.path)).toEqual(fresh.map(route => route.path));
+  });
+});
+
+describe("BaseFileSystemRouter", () => {
+  it("removes routes when only toRoute is configured", async () => {
+    const dir = createRouteTree({ "about.tsx": "// path: /a" });
+    const router = new BaseFileSystemRouter({
+      dir,
+      extensions: ["tsx"],
+      toRoute: routeFromComment
+    });
+    await router.getRoutes();
+
+    const about = path.join(dir, "about.tsx");
+    fs.rmSync(about);
+    router.removeRoute(about);
+
+    expect(router.routes).toEqual([]);
   });
 });
