@@ -52,7 +52,16 @@ export function cleanPath(src: string, config: FileSystemRouterConfig) {
 export class BaseFileSystemRouter extends EventTarget {
   routes: RouteManifestEntry[];
 
+  /** Source file that first produced each route path, so incremental changes keep scan order. */
+  private sources = new Map<string, string>();
+
   config: FileSystemRouterConfig;
+
+  /**
+   * Route path each source file produced. A removed file can no longer be
+   * passed to `toRoute`, and `toPath` may give another file's route.
+   */
+  private routePaths = new Map<string, string>();
 
   constructor(config: FileSystemRouterConfig) {
     super();
@@ -92,12 +101,29 @@ export class BaseFileSystemRouter extends EventTarget {
     throw new Error("Not implemented");
   }
 
-  _addRoute(route: RouteManifestEntry) {
+  _addRoute(route: RouteManifestEntry, src?: string) {
     const idx = this.routes.findIndex(r => r.path === route.path);
-    if (idx >= 0) this.routes.splice(idx, 1);
-    this.routes.push(route);
+    if (idx >= 0) {
+      // Replace in place: an edited file keeps its position. The source that
+      // first produced the path still decides it, as in a full scan.
+      this.routes[idx] = route;
+      return true;
+    }
 
-    return idx >= 0;
+    if (src !== undefined) this.sources.set(route.path, src);
+
+    // A new file goes where a full scan would put it.
+    const at =
+      src === undefined
+        ? -1
+        : this.routes.findIndex(r => {
+            const other = this.sources.get(r.path);
+            return other !== undefined && other > src;
+          });
+    if (at === -1) this.routes.push(route);
+    else this.routes.splice(at, 0, route);
+
+    return false;
   }
 
   async addRoute(src: string) {
@@ -106,7 +132,9 @@ export class BaseFileSystemRouter extends EventTarget {
       try {
         const route = this.toRoute(src);
         if (route) {
-          this._addRoute(route);
+          if (this.routePaths.get(src) !== route.path) this.removeRoute(src);
+          this._addRoute(route, src);
+          this.routePaths.set(src, route.path);
           this.reload(route.path, "add");
         }
       } catch (e) {
@@ -132,7 +160,9 @@ export class BaseFileSystemRouter extends EventTarget {
       try {
         const route = this.toRoute(src);
         if (route) {
-          const updated = this._addRoute(route);
+          if (this.routePaths.get(src) !== route.path) this.removeRoute(src_);
+          const updated = this._addRoute(route, src);
+          this.routePaths.set(src, route.path);
           this.reload(route.path, updated ? "update" : "add");
         } else {
           this.removeRoute(src_);
@@ -145,18 +175,16 @@ export class BaseFileSystemRouter extends EventTarget {
 
   removeRoute(src: string) {
     src = normalizePath(src);
-    if (this.isRoute(src)) {
-      const path = this.toPath(src);
-      if (path === undefined) {
-        return;
-      }
+    const path = this.routePaths.get(src);
+    if (path === undefined) return;
+    this.routePaths.delete(src);
 
-      const idx = this.routes.findIndex(r => r.path === path);
-      if (idx === -1) return;
+    const idx = this.routes.findIndex(r => r.path === path);
+    if (idx === -1) return;
 
-      this.routes.splice(idx, 1);
-      this.reload(path, "remove");
-    }
+    this.routes.splice(idx, 1);
+    this.sources.delete(path);
+    this.reload(path, "remove");
   }
 
   on(type: string, cb: (evt: RouterEvent) => void) {
