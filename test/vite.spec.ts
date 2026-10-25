@@ -109,7 +109,7 @@ describe("writeRouteTypes", () => {
     expect(declaration).not.toContain("excluded");
     expect(declaration).toContain('typeof import("../src/routes/index")');
     expect(declaration).toContain(
-      `$component: FileRoute${codeSplitting ? "Lazy" : "Eager"}Ref<typeof import("../src/routes/index")>`
+      `$component: FileRoute${codeSplitting ? "Lazy" : "Eager"}Ref<Pick<typeof import("../src/routes/index"),`
     );
 
     await createPlugin(root, { ...options, types: "types/plugin.d.ts" }).buildStart.call({});
